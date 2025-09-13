@@ -2,37 +2,46 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>2D NPC Smiley Game</title>
+  <title>2D NPC Smiley Game (speech bubble)</title>
   <style>
-    body { margin:0; background:#111; overflow:hidden; }
+    body { margin:0; background:#111; overflow:hidden; font-family: Arial, sans-serif; }
     canvas { display:block; margin:0 auto; background:#222; }
     #hud {
       position:absolute; top:10px; left:10px; color:white; 
-      font-family:Arial, sans-serif; background:rgba(0,0,0,0.6);
-      padding:10px; border-radius:8px;
+      background:rgba(0,0,0,0.6); padding:10px; border-radius:8px;
     }
-    button { margin:5px; padding:5px 10px; font-weight:bold; }
+    button { margin:5px; padding:5px 10px; font-weight:bold; cursor:pointer; }
   </style>
 </head>
 <body>
 <div id="hud">
   <button id="restartBtn">Restart NPC</button>
   <button id="clearBtn">Clear Blocks</button>
-  <div>Left click: place protective block<br>Right click: remove last block</div>
+  <div>Left click: place protective block (max 2)<br>Right click: remove last block</div>
 </div>
 
 <canvas id="gameCanvas"></canvas>
 
 <script>
+/* 2D NPC Smiley Game with NPC speech bubble "I am blind" at start */
+
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
 
 let npc, npcSpeed = 2.5;
 let obstacles = [];
 let blocks = [];
 let npcAlive = true;
+let showSpeech = true;
+
+// hide the speech bubble after 3 seconds
+setTimeout(()=>{ showSpeech=false; }, 3000);
 
 // --- NPC ---
 function spawnNPC(){
@@ -44,6 +53,8 @@ function spawnNPC(){
     vy: (Math.random()-0.5)*npcSpeed
   };
   npcAlive = true;
+  showSpeech = true;
+  setTimeout(()=>{ showSpeech=false; }, 3000);
 }
 
 // --- Draw NPC (smiley or dead) ---
@@ -52,6 +63,8 @@ function drawNPC(){
   ctx.arc(npc.x, npc.y, npc.r, 0, Math.PI*2);
   ctx.fillStyle = npcAlive ? "yellow" : "red";
   ctx.fill();
+  ctx.strokeStyle = "#222";
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 
   if (npcAlive){
@@ -71,19 +84,53 @@ function drawNPC(){
     // flat mouth
     ctx.beginPath(); ctx.moveTo(npc.x-8, npc.y+10); ctx.lineTo(npc.x+8, npc.y+10); ctx.stroke();
   }
+
+  // speech bubble
+  if (showSpeech){
+    ctx.font = "16px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const text = "I am blind";
+    const padding = 8;
+    const textWidth = ctx.measureText(text).width;
+    const bubbleW = textWidth + padding*2;
+    const bubbleH = 30;
+    const bx = npc.x - bubbleW/2;
+    const by = npc.y - npc.r - bubbleH - 10;
+
+    // bubble background
+    ctx.fillStyle = "white";
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bubbleW, bubbleH, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    // tail
+    ctx.beginPath();
+    ctx.moveTo(npc.x, npc.y - npc.r);
+    ctx.lineTo(npc.x-6, by + bubbleH);
+    ctx.lineTo(npc.x+6, by + bubbleH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // text
+    ctx.fillStyle = "black";
+    ctx.fillText(text, npc.x, by + bubbleH - 8);
+  }
 }
 
 // --- Obstacles ---
 function createObstacles(){
   obstacles = [];
+  const margin = 80;
   for (let i=0; i<15; i++){
     let size = 40;
-    obstacles.push({
-      x: Math.random()*(canvas.width-100)+50,
-      y: Math.random()*(canvas.height-100)+50,
-      w: size,
-      h: size
-    });
+    let x = Math.random()*(canvas.width - margin*2 - size) + margin;
+    let y = Math.random()*(canvas.height - margin*2 - size) + margin;
+    obstacles.push({ x, y, w: size, h: size });
   }
 }
 
@@ -91,9 +138,11 @@ function createObstacles(){
 function drawRect(obj, color){
   ctx.fillStyle = color;
   ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+  ctx.strokeStyle = "rgba(0,0,0,0.4)";
+  ctx.strokeRect(obj.x+0.5, obj.y+0.5, obj.w-1, obj.h-1);
 }
 
-// --- Collision check ---
+// --- Collision helpers ---
 function circleRectColl(circle, rect){
   let distX = Math.abs(circle.x - rect.x - rect.w/2);
   let distY = Math.abs(circle.y - rect.y - rect.h/2);
@@ -105,8 +154,6 @@ function circleRectColl(circle, rect){
   let dy = distY - rect.h/2;
   return (dx*dx + dy*dy <= (circle.r*circle.r));
 }
-
-// --- Check overlap (rect vs rect) ---
 function rectOverlap(a,b){
   return !(a.x+a.w < b.x || a.x > b.x+b.w || a.y+a.h < b.y || a.y > b.y+b.h);
 }
@@ -115,22 +162,27 @@ function rectOverlap(a,b){
 function update(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // draw
-  for (let o of obstacles) drawRect(o,"brown");
-  for (let b of blocks) drawRect(b,"blue");
+  // draw obstacles
+  for (let o of obstacles) drawRect(o,"#8b3e2f");
+
+  // draw player blocks
+  for (let b of blocks) drawRect(b,"#2b7bd6");
 
   if (npcAlive){
     npc.x += npc.vx;
     npc.y += npc.vy;
 
+    // bounce from edges
     if (npc.x-npc.r<0 || npc.x+npc.r>canvas.width) npc.vx *= -1;
     if (npc.y-npc.r<0 || npc.y+npc.r>canvas.height) npc.vy *= -1;
 
+    // random jitter
     if (Math.random()<0.02){
       npc.vx = (Math.random()-0.5)*npcSpeed*2;
       npc.vy = (Math.random()-0.5)*npcSpeed*2;
     }
 
+    // collisions
     for (let o of obstacles){
       let covered=false;
       for (let b of blocks){
@@ -146,35 +198,32 @@ function update(){
   requestAnimationFrame(update);
 }
 
-// --- Place blocks ---
+// --- Place block ---
 canvas.addEventListener("click",(e)=>{
   const size=40;
-  let newBlock = { x:e.clientX-size/2, y:e.clientY-size/2, w:size, h:size };
-
-  // prevent placing on obstacles
-  for (let o of obstacles){
-    if (rectOverlap(newBlock,o)) return;
-  }
-
-  // maintain only 2 blocks
+  const x = e.clientX - size/2;
+  const y = e.clientY - size/2;
+  const newBlock = { x, y, w: size, h: size };
+  for (let o of obstacles){ if (rectOverlap(newBlock, o)) return; }
   if (blocks.length >= 2) blocks.shift();
   blocks.push(newBlock);
 });
 
-// --- Remove last block ---
+// --- Right click to remove last block ---
 canvas.addEventListener("contextmenu",(e)=>{
   e.preventDefault();
   blocks.pop();
 });
 
 // --- Buttons ---
-document.getElementById("restartBtn").onclick=()=>{spawnNPC();};
-document.getElementById("clearBtn").onclick=()=>{blocks=[];};
+document.getElementById("restartBtn").onclick=()=>{ spawnNPC(); };
+document.getElementById("clearBtn").onclick=()=>{ blocks=[]; };
 
-// Init
+// --- Init ---
 spawnNPC();
 createObstacles();
 update();
+
 </script>
 </body>
 </html>
