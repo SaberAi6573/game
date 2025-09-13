@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>3D NPC Protect Game</title>
+  <title>3D NPC Protect Game (Improved)</title>
   <style>
     body { margin: 0; overflow: hidden; background:#111; }
     #hud {
       position: absolute; top: 10px; left: 10px; color: white; 
       font-family: Arial, sans-serif; font-size:14px;
+      background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px;
     }
-    button { margin:5px; padding:6px 10px; font-weight:bold; }
+    button { margin:5px; padding:6px 10px; font-weight:bold; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -23,15 +24,16 @@
 
 <script>
 let scene, camera, renderer;
-let npc, npcSpeed = 0.06;
+let npc, npcSpeed = 0.15; // increased speed
 let obstacles = [];
 let blocks = [];
 let npcAlive = true;
+let stepPhase = 0;
 
 // --- INIT ---
 scene = new THREE.Scene();
 camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
-camera.position.set(0, 20, 40);
+camera.position.set(0, 30, 60);
 
 renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -39,29 +41,41 @@ document.body.appendChild(renderer.domElement);
 
 // Light
 const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(10, 20, 10);
+light.position.set(20, 40, 20);
 scene.add(light);
 scene.add(new THREE.AmbientLight(0x404040));
 
 // Floor
-const floorGeo = new THREE.PlaneGeometry(100, 100);
+const floorGeo = new THREE.PlaneGeometry(120, 120);
 const floorMat = new THREE.MeshPhongMaterial({color:0x222222});
 const floor = new THREE.Mesh(floorGeo, floorMat);
 floor.rotation.x = -Math.PI/2;
 scene.add(floor);
 
-// --- NPC (sphere) ---
+// --- NPC (capsule: cylinder body + sphere head) ---
 function spawnNPC(){
   if (npc) scene.remove(npc);
-  const npcGeo = new THREE.SphereGeometry(1, 16, 16);
-  const npcMat = new THREE.MeshPhongMaterial({color:0xffd166});
-  npc = new THREE.Mesh(npcGeo, npcMat);
-  npc.position.set(0,1,0);
+  npc = new THREE.Group();
+
+  const bodyGeo = new THREE.CylinderGeometry(1,1,4,16);
+  const bodyMat = new THREE.MeshPhongMaterial({color:0xffd166});
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 2;
+  npc.add(body);
+
+  const headGeo = new THREE.SphereGeometry(1.2,16,16);
+  const headMat = new THREE.MeshPhongMaterial({color:0xffc933});
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.y = 4.5;
+  npc.add(head);
+
+  npc.position.set(0,0,0);
   npc.velocity = new THREE.Vector3(
     (Math.random()-0.5)*npcSpeed,
     0,
     (Math.random()-0.5)*npcSpeed
   );
+
   scene.add(npc);
   npcAlive = true;
 }
@@ -71,11 +85,12 @@ spawnNPC();
 function createObstacles(){
   for (let o of obstacles) scene.remove(o);
   obstacles = [];
-  for (let i=0;i<10;i++){
-    const boxGeo = new THREE.BoxGeometry(3,3,3);
+  for (let i=0;i<20;i++){ // increased count
+    const size = Math.random()<0.5 ? 3 : 6;
+    const boxGeo = new THREE.BoxGeometry(size,size,size);
     const boxMat = new THREE.MeshPhongMaterial({color:0xaa2222});
     const box = new THREE.Mesh(boxGeo, boxMat);
-    box.position.set((Math.random()-0.5)*60,1.5,(Math.random()-0.5)*60);
+    box.position.set((Math.random()-0.5)*100, size/2, (Math.random()-0.5)*100);
     scene.add(box);
     obstacles.push(box);
   }
@@ -84,7 +99,7 @@ createObstacles();
 
 // --- Protective Blocks ---
 function addBlock(x,z){
-  const size = 3;
+  const size = 4;
   const boxGeo = new THREE.BoxGeometry(size,size,size);
   const boxMat = new THREE.MeshPhongMaterial({color:0x3399ff});
   const block = new THREE.Mesh(boxGeo, boxMat);
@@ -112,27 +127,29 @@ function animate(){
     // move NPC
     npc.position.add(npc.velocity);
 
-    // bounce off floor bounds
-    if (Math.abs(npc.position.x) > 48) npc.velocity.x *= -1;
-    if (Math.abs(npc.position.z) > 48) npc.velocity.z *= -1;
+    // bounce off bounds
+    if (Math.abs(npc.position.x) > 55) npc.velocity.x *= -1;
+    if (Math.abs(npc.position.z) > 55) npc.velocity.z *= -1;
 
-    // occasionally randomize direction
+    // occasionally change direction
     if (Math.random()<0.01){
       npc.velocity.x = (Math.random()-0.5)*npcSpeed;
       npc.velocity.z = (Math.random()-0.5)*npcSpeed;
     }
 
+    // animate "walk bob"
+    stepPhase += 0.2;
+    npc.position.y = Math.sin(stepPhase)*0.2;
+
     // check collision with obstacles
     for (let obs of obstacles){
       let covered = false;
       for (let block of blocks){
-        if (checkCollision(obs, block)){
-          covered = true; break;
-        }
+        if (checkCollision(obs, block)){ covered = true; break; }
       }
       if (!covered && checkCollision(npc, obs)){
         npcAlive = false;
-        npc.material.color.set(0xff0000);
+        npc.children.forEach(part=>part.material.color.set(0xff0000));
       }
     }
   }
@@ -143,8 +160,7 @@ animate();
 
 // --- Mouse placing blocks ---
 window.addEventListener("click", (e)=>{
-  if (e.button===0){ // left click
-    // project click to ground plane
+  if (e.button===0){
     const mouse = new THREE.Vector2(
       (e.clientX / window.innerWidth) * 2 - 1,
       -(e.clientY / window.innerHeight) * 2 + 1
@@ -154,7 +170,7 @@ window.addEventListener("click", (e)=>{
     const intersects = raycaster.intersectObject(floor);
     if (intersects.length>0){
       const p = intersects[0].point;
-      addBlock(Math.round(p.x/3)*3, Math.round(p.z/3)*3);
+      addBlock(Math.round(p.x/4)*4, Math.round(p.z/4)*4);
     }
   }
 });
