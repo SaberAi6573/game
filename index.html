@@ -1,191 +1,186 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>3D NPC Protect Game (Improved)</title>
+  <meta charset="UTF-8">
+  <title>2D NPC Smiley Game</title>
   <style>
-    body { margin: 0; overflow: hidden; background:#111; }
+    body { margin:0; background:#111; overflow:hidden; }
+    canvas { display:block; margin:0 auto; background:#222; }
     #hud {
-      position: absolute; top: 10px; left: 10px; color: white; 
-      font-family: Arial, sans-serif; font-size:14px;
-      background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px;
+      position:absolute; top:10px; left:10px; color:white; 
+      font-family:Arial, sans-serif; background:rgba(0,0,0,0.6);
+      padding:10px; border-radius:8px;
     }
-    button { margin:5px; padding:6px 10px; font-weight:bold; cursor:pointer; }
+    button { margin:5px; padding:5px 10px; font-weight:bold; }
   </style>
 </head>
 <body>
 <div id="hud">
   <button id="restartBtn">Restart NPC</button>
   <button id="clearBtn">Clear Blocks</button>
-  <div>Left click: place protective block<br/>Right click: remove last block</div>
+  <div>Left click: place protective block<br>Right click: remove last block</div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<canvas id="gameCanvas"></canvas>
 
 <script>
-let scene, camera, renderer;
-let npc, npcSpeed = 0.15; // increased speed
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let npc, npcSpeed = 2.5;
 let obstacles = [];
 let blocks = [];
 let npcAlive = true;
-let stepPhase = 0;
 
-// --- INIT ---
-scene = new THREE.Scene();
-camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
-camera.position.set(0, 30, 60);
-
-renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
-
-// Light
-const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(20, 40, 20);
-scene.add(light);
-scene.add(new THREE.AmbientLight(0x404040));
-
-// Floor
-const floorGeo = new THREE.PlaneGeometry(120, 120);
-const floorMat = new THREE.MeshPhongMaterial({color:0x222222});
-const floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI/2;
-scene.add(floor);
-
-// --- NPC (capsule: cylinder body + sphere head) ---
+// --- NPC (Smiley face) ---
 function spawnNPC(){
-  if (npc) scene.remove(npc);
-  npc = new THREE.Group();
-
-  const bodyGeo = new THREE.CylinderGeometry(1,1,4,16);
-  const bodyMat = new THREE.MeshPhongMaterial({color:0xffd166});
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 2;
-  npc.add(body);
-
-  const headGeo = new THREE.SphereGeometry(1.2,16,16);
-  const headMat = new THREE.MeshPhongMaterial({color:0xffc933});
-  const head = new THREE.Mesh(headGeo, headMat);
-  head.position.y = 4.5;
-  npc.add(head);
-
-  npc.position.set(0,0,0);
-  npc.velocity = new THREE.Vector3(
-    (Math.random()-0.5)*npcSpeed,
-    0,
-    (Math.random()-0.5)*npcSpeed
-  );
-
-  scene.add(npc);
+  npc = {
+    x: canvas.width/2,
+    y: canvas.height/2,
+    r: 20,
+    vx: (Math.random()-0.5)*npcSpeed,
+    vy: (Math.random()-0.5)*npcSpeed
+  };
   npcAlive = true;
 }
-spawnNPC();
+
+// --- Draw NPC ---
+function drawNPC(){
+  ctx.beginPath();
+  ctx.arc(npc.x, npc.y, npc.r, 0, Math.PI*2);
+  ctx.fillStyle = npcAlive ? "yellow" : "red";
+  ctx.fill();
+  ctx.stroke();
+
+  if (npcAlive){
+    // smile face
+    ctx.fillStyle = "black";
+    // eyes
+    ctx.beginPath();
+    ctx.arc(npc.x-7, npc.y-5, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(npc.x+7, npc.y-5, 3, 0, Math.PI*2); ctx.fill();
+    // smile
+    ctx.beginPath();
+    ctx.arc(npc.x, npc.y+3, 10, 0, Math.PI); 
+    ctx.stroke();
+  } else {
+    // dead face (X eyes)
+    ctx.strokeStyle = "black";
+    ctx.beginPath(); ctx.moveTo(npc.x-10,npc.y-8); ctx.lineTo(npc.x-4,npc.y-2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(npc.x-4,npc.y-8); ctx.lineTo(npc.x-10,npc.y-2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(npc.x+10,npc.y-8); ctx.lineTo(npc.x+4,npc.y-2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(npc.x+4,npc.y-8); ctx.lineTo(npc.x+10,npc.y-2); ctx.stroke();
+    // flat mouth
+    ctx.beginPath();
+    ctx.moveTo(npc.x-8, npc.y+10);
+    ctx.lineTo(npc.x+8, npc.y+10);
+    ctx.stroke();
+  }
+}
 
 // --- Obstacles ---
 function createObstacles(){
-  for (let o of obstacles) scene.remove(o);
   obstacles = [];
-  for (let i=0;i<20;i++){ // increased count
-    const size = Math.random()<0.5 ? 3 : 6;
-    const boxGeo = new THREE.BoxGeometry(size,size,size);
-    const boxMat = new THREE.MeshPhongMaterial({color:0xaa2222});
-    const box = new THREE.Mesh(boxGeo, boxMat);
-    box.position.set((Math.random()-0.5)*100, size/2, (Math.random()-0.5)*100);
-    scene.add(box);
-    obstacles.push(box);
+  for (let i=0; i<15; i++){
+    let size = 40;
+    obstacles.push({
+      x: Math.random()*(canvas.width-100)+50,
+      y: Math.random()*(canvas.height-100)+50,
+      w: size,
+      h: size
+    });
   }
 }
-createObstacles();
 
-// --- Protective Blocks ---
-function addBlock(x,z){
-  const size = 4;
-  const boxGeo = new THREE.BoxGeometry(size,size,size);
-  const boxMat = new THREE.MeshPhongMaterial({color:0x3399ff});
-  const block = new THREE.Mesh(boxGeo, boxMat);
-  block.position.set(x, size/2, z);
-  scene.add(block);
-  blocks.push(block);
-}
-function removeBlock(){
-  const b = blocks.pop();
-  if (b) scene.remove(b);
+// --- Draw rectangles ---
+function drawRect(obj, color){
+  ctx.fillStyle = color;
+  ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
 }
 
-// --- Collision detection ---
-function checkCollision(a, b){
-  const ab = new THREE.Box3().setFromObject(a);
-  const bb = new THREE.Box3().setFromObject(b);
-  return ab.intersectsBox(bb);
+// --- Collision check (circle vs rect) ---
+function circleRectColl(circle, rect){
+  let distX = Math.abs(circle.x - rect.x - rect.w/2);
+  let distY = Math.abs(circle.y - rect.y - rect.h/2);
+  if (distX > (rect.w/2 + circle.r)) return false;
+  if (distY > (rect.h/2 + circle.r)) return false;
+  if (distX <= (rect.w/2)) return true;
+  if (distY <= (rect.h/2)) return true;
+  let dx = distX - rect.w/2;
+  let dy = distY - rect.h/2;
+  return (dx*dx + dy*dy <= (circle.r*circle.r));
 }
 
-// --- Animation ---
-function animate(){
-  requestAnimationFrame(animate);
+// --- Game loop ---
+function update(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  if (npc && npcAlive){
-    // move NPC
-    npc.position.add(npc.velocity);
+  // draw obstacles
+  for (let o of obstacles) drawRect(o,"brown");
+  for (let b of blocks) drawRect(b,"blue");
 
-    // bounce off bounds
-    if (Math.abs(npc.position.x) > 55) npc.velocity.x *= -1;
-    if (Math.abs(npc.position.z) > 55) npc.velocity.z *= -1;
+  // move npc
+  if (npcAlive){
+    npc.x += npc.vx;
+    npc.y += npc.vy;
+
+    // bounce from edges
+    if (npc.x-npc.r<0 || npc.x+npc.r>canvas.width) npc.vx *= -1;
+    if (npc.y-npc.r<0 || npc.y+npc.r>canvas.height) npc.vy *= -1;
 
     // occasionally change direction
-    if (Math.random()<0.01){
-      npc.velocity.x = (Math.random()-0.5)*npcSpeed;
-      npc.velocity.z = (Math.random()-0.5)*npcSpeed;
+    if (Math.random()<0.02){
+      npc.vx = (Math.random()-0.5)*npcSpeed*2;
+      npc.vy = (Math.random()-0.5)*npcSpeed*2;
     }
-
-    // animate "walk bob"
-    stepPhase += 0.2;
-    npc.position.y = Math.sin(stepPhase)*0.2;
 
     // check collision with obstacles
-    for (let obs of obstacles){
-      let covered = false;
-      for (let block of blocks){
-        if (checkCollision(obs, block)){ covered = true; break; }
+    for (let o of obstacles){
+      let covered=false;
+      for (let b of blocks){
+        if (!(b.x+ b.w < o.x || b.x > o.x+o.w || b.y+b.h<o.y || b.y>o.y+o.h)){
+          covered=true; break;
+        }
       }
-      if (!covered && checkCollision(npc, obs)){
+      if (!covered && circleRectColl(npc,o)){
         npcAlive = false;
-        npc.children.forEach(part=>part.material.color.set(0xff0000));
       }
     }
   }
 
-  renderer.render(scene, camera);
-}
-animate();
+  // draw npc
+  drawNPC();
 
-// --- Mouse placing blocks ---
-window.addEventListener("click", (e)=>{
-  if (e.button===0){
-    const mouse = new THREE.Vector2(
-      (e.clientX / window.innerWidth) * 2 - 1,
-      -(e.clientY / window.innerHeight) * 2 + 1
-    );
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(floor);
-    if (intersects.length>0){
-      const p = intersects[0].point;
-      addBlock(Math.round(p.x/4)*4, Math.round(p.z/4)*4);
-    }
-  }
+  requestAnimationFrame(update);
+}
+
+// --- Mouse interaction ---
+canvas.addEventListener("click",(e)=>{
+  const size=40;
+  blocks.push({
+    x: e.clientX-size/2,
+    y: e.clientY-size/2,
+    w: size,
+    h: size
+  });
 });
-window.addEventListener("contextmenu", (e)=>{ e.preventDefault(); removeBlock(); });
+canvas.addEventListener("contextmenu",(e)=>{
+  e.preventDefault();
+  blocks.pop();
+});
 
 // --- Buttons ---
-document.getElementById("restartBtn").onclick = ()=>{ spawnNPC(); };
-document.getElementById("clearBtn").onclick = ()=>{ for (let b of blocks) scene.remove(b); blocks=[]; };
+document.getElementById("restartBtn").onclick=()=>{spawnNPC();};
+document.getElementById("clearBtn").onclick=()=>{blocks=[];};
 
-// Resize
-window.addEventListener("resize", ()=>{
-  camera.aspect = window.innerWidth/window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+// Init
+spawnNPC();
+createObstacles();
+update();
+
 </script>
 </body>
 </html>
