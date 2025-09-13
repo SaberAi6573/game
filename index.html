@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>2D NPC Smiley Game (speech bubble)</title>
+  <title>3D NPC Emoji Game with Skybox Background</title>
   <style>
-    body { margin:0; background:#111; overflow:hidden; font-family: Arial, sans-serif; }
-    canvas { display:block; margin:0 auto; background:#222; }
+    body { margin:0; overflow:hidden; }
     #hud {
-      position:absolute; top:10px; left:10px; color:white; 
-      background:rgba(0,0,0,0.6); padding:10px; border-radius:8px;
+      position:absolute; top:10px; left:10px; 
+      background:rgba(0,0,0,0.6); color:white; padding:10px; border-radius:8px;
+      font-family: Arial, sans-serif;
     }
     button { margin:5px; padding:5px 10px; font-weight:bold; cursor:pointer; }
   </style>
@@ -17,213 +17,179 @@
 <div id="hud">
   <button id="restartBtn">Restart NPC</button>
   <button id="clearBtn">Clear Blocks</button>
-  <div>Left click: place protective block (max 2)<br>Right click: remove last block</div>
+  <div>Left click: place block (max 2)<br>Right click: remove last block</div>
 </div>
 
-<canvas id="gameCanvas"></canvas>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
 <script>
-/* 2D NPC Smiley Game with NPC speech bubble "I am blind" at start */
-
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
-function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', resize);
-resize();
-
-let npc, npcSpeed = 2.5;
+let scene, camera, renderer;
+let npc, npcVelocity;
 let obstacles = [];
 let blocks = [];
 let npcAlive = true;
-let showSpeech = true;
 
-// hide the speech bubble after 3 seconds
-setTimeout(()=>{ showSpeech=false; }, 3000);
+// init scene
+scene = new THREE.Scene();
+camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
-// --- NPC ---
-function spawnNPC(){
-  npc = {
-    x: canvas.width/2,
-    y: canvas.height/2,
-    r: 20,
-    vx: (Math.random()-0.5)*npcSpeed,
-    vy: (Math.random()-0.5)*npcSpeed
-  };
-  npcAlive = true;
-  showSpeech = true;
-  setTimeout(()=>{ showSpeech=false; }, 3000);
-}
-
-// --- Draw NPC (smiley or dead) ---
-function drawNPC(){
-  ctx.beginPath();
-  ctx.arc(npc.x, npc.y, npc.r, 0, Math.PI*2);
-  ctx.fillStyle = npcAlive ? "yellow" : "red";
-  ctx.fill();
-  ctx.strokeStyle = "#222";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  if (npcAlive){
-    ctx.fillStyle = "black";
-    // eyes
-    ctx.beginPath(); ctx.arc(npc.x-7, npc.y-5, 3, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(npc.x+7, npc.y-5, 3, 0, Math.PI*2); ctx.fill();
-    // smile
-    ctx.beginPath(); ctx.arc(npc.x, npc.y+3, 10, 0, Math.PI); ctx.stroke();
-  } else {
-    ctx.strokeStyle = "black";
-    // X eyes
-    ctx.beginPath(); ctx.moveTo(npc.x-10,npc.y-8); ctx.lineTo(npc.x-4,npc.y-2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(npc.x-4,npc.y-8); ctx.lineTo(npc.x-10,npc.y-2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(npc.x+10,npc.y-8); ctx.lineTo(npc.x+4,npc.y-2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(npc.x+4,npc.y-8); ctx.lineTo(npc.x+10,npc.y-2); ctx.stroke();
-    // flat mouth
-    ctx.beginPath(); ctx.moveTo(npc.x-8, npc.y+10); ctx.lineTo(npc.x+8, npc.y+10); ctx.stroke();
-  }
-
-  // speech bubble
-  if (showSpeech){
-    ctx.font = "16px Arial";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    const text = "I am blind";
-    const padding = 8;
-    const textWidth = ctx.measureText(text).width;
-    const bubbleW = textWidth + padding*2;
-    const bubbleH = 30;
-    const bx = npc.x - bubbleW/2;
-    const by = npc.y - npc.r - bubbleH - 10;
-
-    // bubble background
-    ctx.fillStyle = "white";
-    ctx.strokeStyle = "black";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(bx, by, bubbleW, bubbleH, 10);
-    ctx.fill();
-    ctx.stroke();
-
-    // tail
-    ctx.beginPath();
-    ctx.moveTo(npc.x, npc.y - npc.r);
-    ctx.lineTo(npc.x-6, by + bubbleH);
-    ctx.lineTo(npc.x+6, by + bubbleH);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // text
-    ctx.fillStyle = "black";
-    ctx.fillText(text, npc.x, by + bubbleH - 8);
-  }
-}
-
-// --- Obstacles ---
-function createObstacles(){
-  obstacles = [];
-  const margin = 80;
-  for (let i=0; i<15; i++){
-    let size = 40;
-    let x = Math.random()*(canvas.width - margin*2 - size) + margin;
-    let y = Math.random()*(canvas.height - margin*2 - size) + margin;
-    obstacles.push({ x, y, w: size, h: size });
-  }
-}
-
-// --- Draw rectangle ---
-function drawRect(obj, color){
-  ctx.fillStyle = color;
-  ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
-  ctx.strokeStyle = "rgba(0,0,0,0.4)";
-  ctx.strokeRect(obj.x+0.5, obj.y+0.5, obj.w-1, obj.h-1);
-}
-
-// --- Collision helpers ---
-function circleRectColl(circle, rect){
-  let distX = Math.abs(circle.x - rect.x - rect.w/2);
-  let distY = Math.abs(circle.y - rect.y - rect.h/2);
-  if (distX > (rect.w/2 + circle.r)) return false;
-  if (distY > (rect.h/2 + circle.r)) return false;
-  if (distX <= (rect.w/2)) return true;
-  if (distY <= (rect.h/2)) return true;
-  let dx = distX - rect.w/2;
-  let dy = distY - rect.h/2;
-  return (dx*dx + dy*dy <= (circle.r*circle.r));
-}
-function rectOverlap(a,b){
-  return !(a.x+a.w < b.x || a.x > b.x+b.w || a.y+a.h < b.y || a.y > b.y+b.h);
-}
-
-// --- Game loop ---
-function update(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  // draw obstacles
-  for (let o of obstacles) drawRect(o,"#8b3e2f");
-
-  // draw player blocks
-  for (let b of blocks) drawRect(b,"#2b7bd6");
-
-  if (npcAlive){
-    npc.x += npc.vx;
-    npc.y += npc.vy;
-
-    // bounce from edges
-    if (npc.x-npc.r<0 || npc.x+npc.r>canvas.width) npc.vx *= -1;
-    if (npc.y-npc.r<0 || npc.y+npc.r>canvas.height) npc.vy *= -1;
-
-    // random jitter
-    if (Math.random()<0.02){
-      npc.vx = (Math.random()-0.5)*npcSpeed*2;
-      npc.vy = (Math.random()-0.5)*npcSpeed*2;
-    }
-
-    // collisions
-    for (let o of obstacles){
-      let covered=false;
-      for (let b of blocks){
-        if (rectOverlap(o,b)){ covered=true; break; }
-      }
-      if (!covered && circleRectColl(npc,o)){
-        npcAlive=false;
-      }
-    }
-  }
-
-  drawNPC();
-  requestAnimationFrame(update);
-}
-
-// --- Place block ---
-canvas.addEventListener("click",(e)=>{
-  const size=40;
-  const x = e.clientX - size/2;
-  const y = e.clientY - size/2;
-  const newBlock = { x, y, w: size, h: size };
-  for (let o of obstacles){ if (rectOverlap(newBlock, o)) return; }
-  if (blocks.length >= 2) blocks.shift();
-  blocks.push(newBlock);
+// skybox (hackathon banner wrapped inside)
+const loader = new THREE.TextureLoader();
+loader.load("your_image.jpg", function(texture){
+  const skyGeo = new THREE.SphereGeometry(100, 32, 32);
+  const skyMat = new THREE.MeshBasicMaterial({
+    map: texture,
+    side: THREE.BackSide // render inside sphere
+  });
+  const sky = new THREE.Mesh(skyGeo, skyMat);
+  scene.add(sky);
 });
 
-// --- Right click to remove last block ---
-canvas.addEventListener("contextmenu",(e)=>{
+// lights
+const light = new THREE.PointLight(0xffffff, 1);
+light.position.set(20,20,20);
+scene.add(light);
+scene.add(new THREE.AmbientLight(0x404040));
+
+// ground plane
+const planeGeo = new THREE.PlaneGeometry(50,50);
+const planeMat = new THREE.MeshPhongMaterial({color:0x222222});
+const plane = new THREE.Mesh(planeGeo, planeMat);
+plane.rotation.x = -Math.PI/2;
+scene.add(plane);
+
+// NPC = smiley sphere
+function createNPC(){
+  const npcGeo = new THREE.SphereGeometry(1,32,32);
+  const canvas = document.createElement("canvas");
+  canvas.width = 64; canvas.height=64;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "yellow";
+  ctx.fillRect(0,0,64,64);
+  ctx.fillStyle = "black";
+  ctx.beginPath(); ctx.arc(20,20,5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(44,20,5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(20,40,24,0,Math.PI); ctx.stroke();
+  const texture = new THREE.CanvasTexture(canvas);
+  const npcMat = new THREE.MeshPhongMaterial({map:texture});
+  const mesh = new THREE.Mesh(npcGeo, npcMat);
+  mesh.position.set(0,1,0);
+  return mesh;
+}
+npc = createNPC();
+scene.add(npc);
+npcVelocity = new THREE.Vector3((Math.random()-0.5)*0.2,0,(Math.random()-0.5)*0.2);
+
+// obstacles 🌵🔥
+function createObstacle(emoji, x,z){
+  const size=2;
+  const geo = new THREE.BoxGeometry(size,size,size);
+  const canvas = document.createElement("canvas");
+  canvas.width=64; canvas.height=64;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "white";
+  ctx.fillRect(0,0,64,64);
+  ctx.font="48px Arial";
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(emoji,32,32);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.MeshPhongMaterial({map:tex});
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x,1,z);
+  return mesh;
+}
+function spawnObstacles(){
+  const emojis=["🌵","🔥"];
+  for(let i=0;i<15;i++){
+    let x=(Math.random()-0.5)*40;
+    let z=(Math.random()-0.5)*40;
+    let emoji=emojis[Math.floor(Math.random()*emojis.length)];
+    const o = createObstacle(emoji,x,z);
+    scene.add(o);
+    obstacles.push(o);
+  }
+}
+spawnObstacles();
+
+// protective block
+function createBlock(x,z){
+  const geo = new THREE.BoxGeometry(2,2,2);
+  const mat = new THREE.MeshPhongMaterial({color:0x2b7bd6});
+  const mesh = new THREE.Mesh(geo,mat);
+  mesh.position.set(x,1,z);
+  return mesh;
+}
+
+// restart
+function restartNPC(){
+  npc.position.set(0,1,0);
+  npcVelocity.set((Math.random()-0.5)*0.2,0,(Math.random()-0.5)*0.2);
+  npcAlive=true;
+}
+document.getElementById("restartBtn").onclick=restartNPC;
+document.getElementById("clearBtn").onclick=()=>{blocks.forEach(b=>scene.remove(b)); blocks=[];};
+
+// mouse click => place block
+document.addEventListener("click",(e)=>{
+  const mouse = new THREE.Vector2(
+    (e.clientX/window.innerWidth)*2-1,
+    -(e.clientY/window.innerHeight)*2+1
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(plane);
+  if(intersects.length>0){
+    const p = intersects[0].point;
+    const newBlock = createBlock(Math.round(p.x), Math.round(p.z));
+    if(blocks.length>=2){ scene.remove(blocks.shift()); }
+    blocks.push(newBlock);
+    scene.add(newBlock);
+  }
+});
+
+// right click remove
+document.addEventListener("contextmenu",(e)=>{
   e.preventDefault();
-  blocks.pop();
+  if(blocks.length>0){
+    const b = blocks.pop();
+    scene.remove(b);
+  }
 });
 
-// --- Buttons ---
-document.getElementById("restartBtn").onclick=()=>{ spawnNPC(); };
-document.getElementById("clearBtn").onclick=()=>{ blocks=[]; };
+// camera
+camera.position.set(0,20,25);
+camera.lookAt(0,0,0);
 
-// --- Init ---
-spawnNPC();
-createObstacles();
-update();
+// animate
+function animate(){
+  requestAnimationFrame(animate);
 
+  if(npcAlive){
+    npc.position.add(npcVelocity);
+    if(Math.abs(npc.position.x)>25) npcVelocity.x*=-1;
+    if(Math.abs(npc.position.z)>25) npcVelocity.z*=-1;
+    if(Math.random()<0.01){
+      npcVelocity.set((Math.random()-0.5)*0.3,0,(Math.random()-0.5)*0.3);
+    }
+    for(let o of obstacles){
+      if(npc.position.distanceTo(o.position)<2.5){
+        let covered=false;
+        for(let b of blocks){
+          if(b.position.distanceTo(o.position)<2) covered=true;
+        }
+        if(!covered){
+          npcAlive=false;
+          npc.material.color.set(0xff0000);
+        }
+      }
+    }
+  }
+  renderer.render(scene,camera);
+}
+animate();
 </script>
 </body>
 </html>
