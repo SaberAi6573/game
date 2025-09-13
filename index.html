@@ -34,7 +34,7 @@ let obstacles = [];
 let blocks = [];
 let npcAlive = true;
 
-// --- NPC (Smiley face) ---
+// --- NPC ---
 function spawnNPC(){
   npc = {
     x: canvas.width/2,
@@ -46,7 +46,7 @@ function spawnNPC(){
   npcAlive = true;
 }
 
-// --- Draw NPC ---
+// --- Draw NPC (smiley or dead) ---
 function drawNPC(){
   ctx.beginPath();
   ctx.arc(npc.x, npc.y, npc.r, 0, Math.PI*2);
@@ -55,29 +55,21 @@ function drawNPC(){
   ctx.stroke();
 
   if (npcAlive){
-    // smile face
     ctx.fillStyle = "black";
     // eyes
-    ctx.beginPath();
-    ctx.arc(npc.x-7, npc.y-5, 3, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath();
-    ctx.arc(npc.x+7, npc.y-5, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(npc.x-7, npc.y-5, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(npc.x+7, npc.y-5, 3, 0, Math.PI*2); ctx.fill();
     // smile
-    ctx.beginPath();
-    ctx.arc(npc.x, npc.y+3, 10, 0, Math.PI); 
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(npc.x, npc.y+3, 10, 0, Math.PI); ctx.stroke();
   } else {
-    // dead face (X eyes)
     ctx.strokeStyle = "black";
+    // X eyes
     ctx.beginPath(); ctx.moveTo(npc.x-10,npc.y-8); ctx.lineTo(npc.x-4,npc.y-2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(npc.x-4,npc.y-8); ctx.lineTo(npc.x-10,npc.y-2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(npc.x+10,npc.y-8); ctx.lineTo(npc.x+4,npc.y-2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(npc.x+4,npc.y-8); ctx.lineTo(npc.x+10,npc.y-2); ctx.stroke();
     // flat mouth
-    ctx.beginPath();
-    ctx.moveTo(npc.x-8, npc.y+10);
-    ctx.lineTo(npc.x+8, npc.y+10);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(npc.x-8, npc.y+10); ctx.lineTo(npc.x+8, npc.y+10); ctx.stroke();
   }
 }
 
@@ -95,13 +87,13 @@ function createObstacles(){
   }
 }
 
-// --- Draw rectangles ---
+// --- Draw rectangle ---
 function drawRect(obj, color){
   ctx.fillStyle = color;
   ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
 }
 
-// --- Collision check (circle vs rect) ---
+// --- Collision check ---
 function circleRectColl(circle, rect){
   let distX = Math.abs(circle.x - rect.x - rect.w/2);
   let distY = Math.abs(circle.y - rect.y - rect.h/2);
@@ -114,59 +106,62 @@ function circleRectColl(circle, rect){
   return (dx*dx + dy*dy <= (circle.r*circle.r));
 }
 
+// --- Check overlap (rect vs rect) ---
+function rectOverlap(a,b){
+  return !(a.x+a.w < b.x || a.x > b.x+b.w || a.y+a.h < b.y || a.y > b.y+b.h);
+}
+
 // --- Game loop ---
 function update(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // draw obstacles
+  // draw
   for (let o of obstacles) drawRect(o,"brown");
   for (let b of blocks) drawRect(b,"blue");
 
-  // move npc
   if (npcAlive){
     npc.x += npc.vx;
     npc.y += npc.vy;
 
-    // bounce from edges
     if (npc.x-npc.r<0 || npc.x+npc.r>canvas.width) npc.vx *= -1;
     if (npc.y-npc.r<0 || npc.y+npc.r>canvas.height) npc.vy *= -1;
 
-    // occasionally change direction
     if (Math.random()<0.02){
       npc.vx = (Math.random()-0.5)*npcSpeed*2;
       npc.vy = (Math.random()-0.5)*npcSpeed*2;
     }
 
-    // check collision with obstacles
     for (let o of obstacles){
       let covered=false;
       for (let b of blocks){
-        if (!(b.x+ b.w < o.x || b.x > o.x+o.w || b.y+b.h<o.y || b.y>o.y+o.h)){
-          covered=true; break;
-        }
+        if (rectOverlap(o,b)){ covered=true; break; }
       }
       if (!covered && circleRectColl(npc,o)){
-        npcAlive = false;
+        npcAlive=false;
       }
     }
   }
 
-  // draw npc
   drawNPC();
-
   requestAnimationFrame(update);
 }
 
-// --- Mouse interaction ---
+// --- Place blocks ---
 canvas.addEventListener("click",(e)=>{
   const size=40;
-  blocks.push({
-    x: e.clientX-size/2,
-    y: e.clientY-size/2,
-    w: size,
-    h: size
-  });
+  let newBlock = { x:e.clientX-size/2, y:e.clientY-size/2, w:size, h:size };
+
+  // prevent placing on obstacles
+  for (let o of obstacles){
+    if (rectOverlap(newBlock,o)) return;
+  }
+
+  // maintain only 2 blocks
+  if (blocks.length >= 2) blocks.shift();
+  blocks.push(newBlock);
 });
+
+// --- Remove last block ---
 canvas.addEventListener("contextmenu",(e)=>{
   e.preventDefault();
   blocks.pop();
@@ -180,7 +175,6 @@ document.getElementById("clearBtn").onclick=()=>{blocks=[];};
 spawnNPC();
 createObstacles();
 update();
-
 </script>
 </body>
 </html>
