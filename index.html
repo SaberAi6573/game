@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Save the Falling NPC</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+        }
+        
+        #game-container {
+            position: relative;
+            width: 80%;
+            height: 80%;
+            border: 2px solid #fff;
+            background-color: #333;
+            overflow: hidden;
+        }
+
+        #npc {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background-color: #ff0000;
+            cursor: pointer;
+            transition: top 0.1s linear; /* Smooth movement */
+        }
+
+        #score {
+            margin-top: 20px;
+            font-size: 1.5em;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3em;
+            color: #ff0000;
+            display: none;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Save the Falling NPC!</h1>
+    <div id="game-container">
+        <div id="npc"></div>
+        <div id="game-over">GAME OVER</div>
+    </div>
+    <div id="score">Score: 0</div>
+
+    <script>
+        const npc = document.getElementById('npc');
+        const gameContainer = document.getElementById('game-container');
+        const scoreDisplay = document.getElementById('score');
+        const gameOverDisplay = document.getElementById('game-over');
+
+        let npcPosition = 0;
+        let score = 0;
+        let gameLoop;
+        const fallSpeed = 0.5; // Adjust this value to change fall speed
+        const nudgeUp = 50; // How much the NPC moves up on click
+
+        function gameStart() {
+            npcPosition = 0;
+            score = 0;
+            npc.style.top = '0px';
+            gameOverDisplay.style.display = 'none';
+            gameLoop = setInterval(gameLogic, 20); // Run gameLogic every 20ms
+        }
+
+        function gameLogic() {
+            npcPosition += fallSpeed;
+            npc.style.top = npcPosition + 'px';
+
+            // Check if NPC has fallen off the screen
+            if (npcPosition + npc.offsetHeight >= gameContainer.offsetHeight) {
+                clearInterval(gameLoop);
+                gameOverDisplay.style.display = 'block';
+            }
+        }
+
+        function nudgeNpc() {
+            if (npcPosition > 0) {
+                npcPosition -= nudgeUp;
+                if (npcPosition < 0) {
+                    npcPosition = 0; // Prevent it from going above the top
+                }
+                npc.style.top = npcPosition + 'px';
+                score++;
+                scoreDisplay.textContent = 'Score: ' + score;
+            }
+        }
+
+        npc.addEventListener('click', nudgeNpc);
+        gameStart();
+
+    </script>
+</body>
+</html>
