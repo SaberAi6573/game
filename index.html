@@ -1,360 +1,175 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>NPC Protect — HTML Canvas Game</title>
-<style>
-  body { font-family: Arial, Helvetica, sans-serif; background:#111; color:#eee; margin:0; display:flex; height:100vh; }
-  #gameWrap { margin:auto; text-align:center; }
-  canvas { background: linear-gradient(#1e1e2a, #121217); display:block; border:4px solid #333; box-shadow:0 8px 30px rgba(0,0,0,0.7); }
-  #hud { margin-top:8px; display:flex; gap:8px; justify-content:center; align-items:center; }
-  button { padding:8px 12px; border-radius:6px; border:none; background:#ff7b7b; color:#111; cursor:pointer; font-weight:600; }
-  .info { font-size:13px; color:#ccc; margin-left:12px; }
-  .small { font-size:12px; color:#aaa; }
-</style>
+  <meta charset="utf-8">
+  <title>3D NPC Protect Game</title>
+  <style>
+    body { margin: 0; overflow: hidden; background:#111; }
+    #hud {
+      position: absolute; top: 10px; left: 10px; color: white; 
+      font-family: Arial, sans-serif; font-size:14px;
+    }
+    button { margin:5px; padding:6px 10px; font-weight:bold; }
+  </style>
 </head>
 <body>
-  <div id="gameWrap">
-    <canvas id="game" width="900" height="600"></canvas>
-    <div id="hud">
-      <button id="restartBtn">Restart NPC</button>
-      <button id="clearBtn">Clear Player Blocks</button>
-      <div class="info">
-        Left-click to place a protective block (size selectable below). Right-click to undo last placed block.
-        <div class="small">If NPC touches a deadly obstacle that is NOT covered by a protective block it dies.</div>
-      </div>
-    </div>
-    <div style="margin-top:8px; color:#bbb;">
-      Protective block size:
-      <select id="sizeSelect">
-        <option value="30">Small (30)</option>
-        <option value="50" selected>Medium (50)</option>
-        <option value="80">Large (80)</option>
-      </select>
-      &nbsp; • &nbsp; NPC speed:
-      <input id="speedRange" type="range" min="0.6" max="3.5" step="0.1" value="1.6">
-      <span id="speedVal">1.6</span>
-    </div>
-  </div>
+<div id="hud">
+  <button id="restartBtn">Restart NPC</button>
+  <button id="clearBtn">Clear Blocks</button>
+  <div>Left click: place protective block<br/>Right click: remove last block</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
 <script>
-/* NPC Protect — plain JS + Canvas
-   - NPC moves randomly
-   - Obstacles are deadly rectangles
-   - Player places "protective blocks" to cover obstacles or block NPC
-   - NPC dies if it touches a deadly obstacle that is not covered
-*/
-
-// Canvas + context
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
-
-// Game objects
-let npc = null;
+let scene, camera, renderer;
+let npc, npcSpeed = 0.06;
 let obstacles = [];
-let playerBlocks = []; // protective blocks placed by player (rectangles)
-let lastPlaced = null;
+let blocks = [];
+let npcAlive = true;
 
-// Controls
-const restartBtn = document.getElementById('restartBtn');
-const clearBtn = document.getElementById('clearBtn');
-const sizeSelect = document.getElementById('sizeSelect');
-const speedRange = document.getElementById('speedRange');
-const speedVal = document.getElementById('speedVal');
-speedVal.textContent = speedRange.value;
+// --- INIT ---
+scene = new THREE.Scene();
+camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(0, 20, 40);
 
-// Utils
-function rand(min, max){ return Math.random() * (max - min) + min; }
-function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
-// Circle-Rect collision (for NPC (circle) vs rect)
-function circleRectCollide(cx, cy, r, rx, ry, rw, rh) {
-  const closestX = clamp(cx, rx, rx+rw);
-  const closestY = clamp(cy, ry, ry+rh);
-  const dx = cx - closestX;
-  const dy = cy - closestY;
-  return (dx*dx + dy*dy) <= r*r;
+// Light
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(10, 20, 10);
+scene.add(light);
+scene.add(new THREE.AmbientLight(0x404040));
+
+// Floor
+const floorGeo = new THREE.PlaneGeometry(100, 100);
+const floorMat = new THREE.MeshPhongMaterial({color:0x222222});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+// --- NPC (sphere) ---
+function spawnNPC(){
+  if (npc) scene.remove(npc);
+  const npcGeo = new THREE.SphereGeometry(1, 16, 16);
+  const npcMat = new THREE.MeshPhongMaterial({color:0xffd166});
+  npc = new THREE.Mesh(npcGeo, npcMat);
+  npc.position.set(0,1,0);
+  npc.velocity = new THREE.Vector3(
+    (Math.random()-0.5)*npcSpeed,
+    0,
+    (Math.random()-0.5)*npcSpeed
+  );
+  scene.add(npc);
+  npcAlive = true;
 }
+spawnNPC();
 
-// Initialize obstacles (deadly)
-function makeObstacles() {
+// --- Obstacles ---
+function createObstacles(){
+  for (let o of obstacles) scene.remove(o);
   obstacles = [];
-  const count = 12;
-  for (let i=0;i<count;i++){
-    let w = Math.floor(rand(60,150));
-    let h = Math.floor(rand(40,120));
-    let x = Math.floor(rand(40, W - w - 40));
-    let y = Math.floor(rand(40, H - h - 40));
-    // Avoid spawn area center; if conflicts, nudge
-    obstacles.push({ x, y, w, h, deadly:true });
+  for (let i=0;i<10;i++){
+    const boxGeo = new THREE.BoxGeometry(3,3,3);
+    const boxMat = new THREE.MeshPhongMaterial({color:0xaa2222});
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.position.set((Math.random()-0.5)*60,1.5,(Math.random()-0.5)*60);
+    scene.add(box);
+    obstacles.push(box);
   }
-  // Add some narrow spikes
-  obstacles.push({ x: 150, y: 80, w: 20, h: 200, deadly:true });
-  obstacles.push({ x: 700, y: 340, w: 20, h: 180, deadly:true });
+}
+createObstacles();
+
+// --- Protective Blocks ---
+function addBlock(x,z){
+  const size = 3;
+  const boxGeo = new THREE.BoxGeometry(size,size,size);
+  const boxMat = new THREE.MeshPhongMaterial({color:0x3399ff});
+  const block = new THREE.Mesh(boxGeo, boxMat);
+  block.position.set(x, size/2, z);
+  scene.add(block);
+  blocks.push(block);
+}
+function removeBlock(){
+  const b = blocks.pop();
+  if (b) scene.remove(b);
 }
 
-// NPC constructor
-function spawnNPC() {
-  const r = 12; // radius
-  const x = rand(60, W - 60);
-  const y = rand(60, H - 60);
-  const speed = parseFloat(speedRange.value);
-  npc = {
-    x, y, r,
-    vx: rand(-1,1),
-    vy: rand(-1,1),
-    speed,
-    alive: true,
-    deathTimer: 0
-  };
-  // normalize initial velocity
-  normalizeVelocity(npc);
+// --- Collision detection ---
+function checkCollision(a, b){
+  const ab = new THREE.Box3().setFromObject(a);
+  const bb = new THREE.Box3().setFromObject(b);
+  return ab.intersectsBox(bb);
 }
 
-// normalize and apply speed
-function normalizeVelocity(o) {
-  const mag = Math.hypot(o.vx, o.vy) || 1;
-  o.vx = (o.vx / mag) * o.speed;
-  o.vy = (o.vy / mag) * o.speed;
-}
+// --- Animation ---
+function animate(){
+  requestAnimationFrame(animate);
 
-// Update NPC movement: wandering behavior
-let directionChangeCooldown = 0;
-function updateNPC(dt) {
-  if (!npc || !npc.alive) return;
+  if (npc && npcAlive){
+    // move NPC
+    npc.position.add(npc.velocity);
 
-  // occasionally pick a new random direction
-  directionChangeCooldown -= dt;
-  if (directionChangeCooldown <= 0) {
-    npc.vx = rand(-1,1);
-    npc.vy = rand(-1,1);
-    normalizeVelocity(npc);
-    directionChangeCooldown = rand(0.5, 1.6);
-  }
+    // bounce off floor bounds
+    if (Math.abs(npc.position.x) > 48) npc.velocity.x *= -1;
+    if (Math.abs(npc.position.z) > 48) npc.velocity.z *= -1;
 
-  // simple avoidance: if next step hits a protective block or obstacle, try different direction
-  const nextX = npc.x + npc.vx * dt * 60;
-  const nextY = npc.y + npc.vy * dt * 60;
-
-  // bounce on walls
-  if (nextX - npc.r < 0 || nextX + npc.r > W) npc.vx *= -1;
-  if (nextY - npc.r < 0 || nextY + npc.r > H) npc.vy *= -1;
-
-  // small probability to try to avoid colliding with obstacles (so placement matters)
-  let collidedObstacle = null;
-  for (const obs of obstacles) {
-    // obstacle is covered if any player block completely overlaps or intersects (we detect coverage)
-    const covered = isObstacleCovered(obs);
-    if (!covered && circleRectCollide(nextX, nextY, npc.r, obs.x, obs.y, obs.w, obs.h)) {
-      collidedObstacle = obs;
-      break;
+    // occasionally randomize direction
+    if (Math.random()<0.01){
+      npc.velocity.x = (Math.random()-0.5)*npcSpeed;
+      npc.velocity.z = (Math.random()-0.5)*npcSpeed;
     }
-  }
 
-  // If a collision would occur, pick a new random direction to avoid it
-  if (collidedObstacle) {
-    npc.vx = rand(-1,1);
-    npc.vy = rand(-1,1);
-    normalizeVelocity(npc);
-    // also give a small nudge away
-    npc.x += npc.vx * npc.speed * 4;
-    npc.y += npc.vy * npc.speed * 4;
-  } else {
-    // move normally
-    npc.x += npc.vx * npc.speed * 60 * dt;
-    npc.y += npc.vy * npc.speed * 60 * dt;
-  }
-
-  // clamp inside
-  npc.x = clamp(npc.x, npc.r, W - npc.r);
-  npc.y = clamp(npc.y, npc.r, H - npc.r);
-
-  // After moving, check for actual collision with any deadly obstacle not covered
-  for (const obs of obstacles) {
-    if (circleRectCollide(npc.x, npc.y, npc.r, obs.x, obs.y, obs.w, obs.h)) {
-      if (obs.deadly && !isObstacleCovered(obs)) {
-        // NPC dies
-        npc.alive = false;
-        npc.deathTimer = 1.0;
-        return;
+    // check collision with obstacles
+    for (let obs of obstacles){
+      let covered = false;
+      for (let block of blocks){
+        if (checkCollision(obs, block)){
+          covered = true; break;
+        }
+      }
+      if (!covered && checkCollision(npc, obs)){
+        npcAlive = false;
+        npc.material.color.set(0xff0000);
       }
     }
   }
-}
 
-// Check if obstacle is covered by any player block (we consider block covering if rectangles overlap >= half area)
-function isObstacleCovered(obs) {
-  for (const pb of playerBlocks) {
-    if (rectsOverlap(pb.x, pb.y, pb.w, pb.h, obs.x, obs.y, obs.w, obs.h)) {
-      // if protective block overlaps obstacle at all we treat it as covered (player placed to protect)
-      // you can tweak this to require full coverage.
-      return true;
+  renderer.render(scene, camera);
+}
+animate();
+
+// --- Mouse placing blocks ---
+window.addEventListener("click", (e)=>{
+  if (e.button===0){ // left click
+    // project click to ground plane
+    const mouse = new THREE.Vector2(
+      (e.clientX / window.innerWidth) * 2 - 1,
+      -(e.clientY / window.innerHeight) * 2 + 1
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObject(floor);
+    if (intersects.length>0){
+      const p = intersects[0].point;
+      addBlock(Math.round(p.x/3)*3, Math.round(p.z/3)*3);
     }
   }
-  return false;
-}
-
-function rectsOverlap(x1,y1,w1,h1, x2,y2,w2,h2) {
-  return !(x1+w1 < x2 || x2+w2 < x1 || y1+h1 < y2 || y2+h2 < y1);
-}
-
-// Draw everything
-function draw() {
-  // clear
-  ctx.clearRect(0,0,W,H);
-
-  // grid (subtle)
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = "rgba(255,255,255,0.03)";
-  for (let gx=0; gx<W; gx+=40) {
-    ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke();
-  }
-  for (let gy=0; gy<H; gy+=40) {
-    ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke();
-  }
-
-  // obstacles
-  for (const obs of obstacles) {
-    // draw deadly obstacles in dark red
-    ctx.fillStyle = "rgba(160,30,30,0.95)";
-    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
-
-    // if covered, draw an overlay to show it's protected
-    if (isObstacleCovered(obs)) {
-      ctx.fillStyle = "rgba(50,160,80,0.55)";
-      ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
-      ctx.strokeStyle = "rgba(50,200,120,0.9)";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(obs.x+1, obs.y+1, obs.w-2, obs.h-2);
-    } else {
-      ctx.strokeStyle = "rgba(255,120,120,0.9)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(obs.x+0.5, obs.y+0.5, obs.w-1, obs.h-1);
-    }
-  }
-
-  // player protective blocks
-  for (const pb of playerBlocks) {
-    ctx.fillStyle = "rgba(80,130,220,0.9)";
-    ctx.fillRect(pb.x, pb.y, pb.w, pb.h);
-    ctx.strokeStyle = "rgba(200,220,255,0.8)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(pb.x+0.5, pb.y+0.5, pb.w-1, pb.h-1);
-  }
-
-  // NPC
-  if (npc) {
-    if (npc.alive) {
-      ctx.beginPath();
-      ctx.fillStyle = "#ffd166";
-      ctx.arc(npc.x, npc.y, npc.r, 0, Math.PI*2);
-      ctx.fill();
-      // eye
-      ctx.fillStyle = "#222";
-      ctx.beginPath(); ctx.arc(npc.x+4, npc.y-3, 2.5, 0, Math.PI*2); ctx.fill();
-      // trail shadow
-      ctx.fillStyle = "rgba(0,0,0,0.12)";
-      ctx.fillRect(npc.x-npc.r, npc.y+npc.r+2, npc.r*2, 4);
-    } else {
-      // death animation: red circle shrinking
-      ctx.save();
-      ctx.translate(npc.x, npc.y);
-      const t = Math.max(0, 1 - npc.deathTimer); // 0->1
-      ctx.fillStyle = "rgba(180,30,30,0.95)";
-      ctx.beginPath();
-      ctx.arc(0,0, Math.max(2, npc.r * (1 - npc.deathTimer)), 0, Math.PI*2);
-      ctx.fill();
-      ctx.restore();
-
-      // label
-      ctx.fillStyle = "#f77";
-      ctx.font = "16px Arial";
-      ctx.fillText("NPC DIED", npc.x - 28, npc.y - npc.r - 8);
-    }
-  }
-
-  // HUD text top-left
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  ctx.font = "12px Arial";
-  ctx.fillText("Obstacles: " + obstacles.length + "   Protective blocks: " + playerBlocks.length, 8, 16);
-}
-
-// Main loop
-let lastTime = performance.now();
-function tick(now) {
-  const dt = Math.min(0.04, (now - lastTime) / 1000);
-  lastTime = now;
-
-  // update speed param
-  if (npc) {
-    npc.speed = parseFloat(speedRange.value);
-  }
-
-  updateNPC(dt);
-
-  // if dead, reduce death timer for fade/animation and stop movement
-  if (npc && !npc.alive) {
-    npc.deathTimer -= dt;
-    if (npc.deathTimer <= 0) npc.deathTimer = 0;
-  }
-
-  draw();
-  requestAnimationFrame(tick);
-}
-
-// Input: place protective block on left click
-canvas.addEventListener('mousedown', function(e){
-  // prevent context menu on right click
-  // We'll handle right click separately
 });
+window.addEventListener("contextmenu", (e)=>{ e.preventDefault(); removeBlock(); });
 
-canvas.addEventListener('click', function(e){
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const size = parseInt(sizeSelect.value, 10);
-  // place block centered on click
-  const bx = clamp(x - size/2, 0, W - size);
-  const by = clamp(y - size/2, 0, H - size);
-  playerBlocks.push({ x: bx, y: by, w: size, h: size });
-  lastPlaced = playerBlocks[playerBlocks.length - 1];
+// --- Buttons ---
+document.getElementById("restartBtn").onclick = ()=>{ spawnNPC(); };
+document.getElementById("clearBtn").onclick = ()=>{ for (let b of blocks) scene.remove(b); blocks=[]; };
+
+// Resize
+window.addEventListener("resize", ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
-// right click to remove last placed block
-canvas.addEventListener('contextmenu', function(e){
-  e.preventDefault();
-  if (playerBlocks.length > 0) {
-    playerBlocks.pop();
-  }
-});
-
-// buttons
-restartBtn.addEventListener('click', function(){
-  spawnNPC();
-});
-clearBtn.addEventListener('click', function(){
-  playerBlocks = [];
-});
-
-// speed display
-speedRange.addEventListener('input', function(){
-  speedVal.textContent = speedRange.value;
-  if (npc) npc.speed = parseFloat(speedRange.value);
-});
-
-// Initialize game
-function init() {
-  makeObstacles();
-  playerBlocks = [];
-  spawnNPC();
-  lastTime = performance.now();
-  requestAnimationFrame(tick);
-}
-
-init();
-
 </script>
 </body>
 </html>
